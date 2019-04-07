@@ -4,13 +4,14 @@ from keras import models
 from keras import layers
 from keras import optimizers
 from collections import deque
+from keras.models import load_model
 import random
 
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 from KukaEnv_10703 import KukaVariedObjectEnv
-from local import canonical_plot
+# from KukaEnv_HER import KukaVariedObjectEnv
 
 T = 1000
 n_object = 9
@@ -21,16 +22,29 @@ class QNetwork:
     # The network should take in state of the world as an input,
     # and output Q values of the actions available to the agent as the output.
 
-    def __init__(self, nstate, naction, lr):
-        # Define your network architecture here. It is also a good idea to define any training operations
-        # and optimizers here, initialize your variables, or alternately compile your model here.
-        model = models.Sequential()
-        model.add(layers.Dense(24, input_dim=nstate, activation='relu'))
-        model.add(layers.Dense(24, activation='relu'))
-        model.add(layers.Dense(naction))
-        model.compile(loss='mse', optimizer=optimizers.Adam(lr=lr))
+    def __init__(self, nstate, naction, lr, load_model_file=None):
+        if load_model_file:
+            self.loadmodel(load_model_file)
 
-        self.model = model
+        else:
+            model = models.Sequential()
+            model.add(layers.Dense(32, input_dim=nstate, activation='relu'))
+            model.add(layers.Dense(64, activation='relu'))
+            # model.add(layers.Dense(256, activation='relu'))
+            model.add(layers.Dense(naction))
+            model.compile(loss='mse', optimizer=optimizers.Adam(lr=lr))
+
+            self.model = model
+
+    def loadmodel(self, model_file):
+        '''
+        Function to load a previously saved model
+
+        Parameters:
+        model_file: File name for previously saved model
+        '''
+        self.model = load_model(model_file)
+        print("Model loaded successfully")
 
 
 class Replay_Memory:
@@ -85,12 +99,14 @@ class DQN_Agent:
         self.epsilon_min = 0.05
         self.epsilon_decay = 0.0000045
 
-        self.batch_size = 32
-        self.episode = 50000
+        self.batch_size = 64
+        self.episode = 60000
         if render:
             self.episode = 10000
         self.videostep = self.episode // 3
 
+        # load_model_file = './saved_model_dqn/old_15799checkpoint.h5'
+        # self.model = QNetwork(self.nstate, self.naction, self.lr,load_model_file).model
         self.model = QNetwork(self.nstate, self.naction, self.lr).model
 
     def epsilon_greedy_policy(self, q_values, ceps=None):
@@ -104,8 +120,11 @@ class DQN_Agent:
         return np.argmax(q_values[0]).item()
 
     def greedy_policy(self, q_values):
+        """
+        Used in test
+        """
         # Creating greedy policy for test time.
-        pass
+        return np.argmax(q_values[0]).item()
 
     def plot(self, train_reward, test_reward):
         x = range(100, len(test_reward) * 100, 100)
@@ -149,7 +168,8 @@ class DQN_Agent:
                 state = next_state
                 t += 1
             if total_reward > 0:
-                print("Episode {}# Score: {}".format(ep, total_reward), t, self.epsilon)
+                # print("Episode {}# Score: {}".format(ep, total_reward), t, self.epsilon)
+                print("Episode {}# Score: {}".format(ep, total_reward), t)
             self.train()
 
             if (ep+1) % 100 == 0:
@@ -158,11 +178,13 @@ class DQN_Agent:
                 test_reward.append(treward)
                 print('Epoch {} test reward {}'.format(ep, treward))
                 print('test_reward', test_reward)
-                canonical_plot.plot(prefix='dqn/', rewards=train_reward)
+                canonical_plot(prefix='./saved_plot_dqn/', rewards=train_reward)
 
                 if treward > max_reward:
                     max_reward = treward
-                    self.model.save('model/checkpoint.h5')
+                    self.model.save('./saved_model_dqn/'+str(ep)+'checkpoint.h5')
+            if (ep+1) % 5000 == 0:
+                self.model.save('./saved_model_dqn/'+str(ep)+'checkpoint.h5')
 
     def train(self):
         if len(self.replay.memo) < self.batch_size:
@@ -191,7 +213,7 @@ class DQN_Agent:
             r = 0.0
             for t in range(200):
                 qvalue = model.predict(state)
-                action = self.epsilon_greedy_policy(qvalue, 0.05)
+                action = self.greedy_policy(qvalue)
                 nextstate, reward, is_terminal, debug_info = self.env.step(action)
                 nextstate = np.array(get_state(env))
                 nextstate = nextstate.reshape((1, -1))
@@ -215,12 +237,44 @@ class DQN_Agent:
         env.close()
 
 
+##############################################################################################
+
+NUM_POINTS = 300.0
+
+def canonical_plot(prefix, rewards):
+    x_gap = len(rewards) / NUM_POINTS
+    x_vals = np.arange(0, len(rewards), x_gap).astype(int)
+    rewards = np.array(rewards)
+
+    for name, axis_label, func in \
+        [('sum', 'Reward Sum (to date)', points_sum), \
+         ('avg', 'Reward Average (next 100)', points_avg)]:
+        y_vals = func(rewards, x_vals)
+        for logscale in [True, False]:
+            if logscale:
+                plt.yscale('log')
+            plt.plot(x_vals+1, y_vals)
+            plt.xlabel('Unit of training (Actions in W1, Episodes in W2)')
+            plt.ylabel(axis_label)
+            plt.grid(which='Both')
+            plt.tight_layout()
+            plt.savefig(prefix + '_' + name + '_' + ('log' if logscale else 'lin') + '.png')
+            plt.close()
+
+def points_sum(rewards, x_vals):
+    return np.array([np.sum(rewards[0:val]) for val in x_vals])
+
+def points_avg(rewards, x_vals):
+    return np.array([np.sum(rewards[val:min(len(rewards), val+100)]) \
+                     /float(min(len(rewards)-val, 100)) for val in x_vals])
+
+##############################################################################################
+
 def get_state(env):
     state = env.get_feature_vec_observation()
     res = state[0:-1]
     res.extend(to_categorical(state[-1], n_object))
     return res
-
 
 if __name__ == '__main__':
     # main(sys.argv)
@@ -244,8 +298,7 @@ if __name__ == '__main__':
     done = False
     naction = env.action_space.n
     nstate = len(env.get_feature_vec_observation())
-    print(naction, nstate)
 
     agent = DQN_Agent(env)
     # agent.run()
-    agent.load_test(env, 'model/checkpoint.h5')
+    agent.load_test(env, 'saved_model_dqn/49999checkpoint.h5')
