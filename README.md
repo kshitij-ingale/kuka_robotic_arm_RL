@@ -8,3 +8,9 @@ Pybullet Kuka robotic arm manipulation task was analyzed for different reinforce
 - PPO
 
 The PPO and DDPG implementation were augmented with Hindsight Experience Replay (HER). In addition to this, curiosity driven exploration was studied for DDPG implementation
+
+## Results:
+
+The simulated robotic arm was trained using DQN for discrete action space for the following result
+
+![](https://github.com/kshitij-ingale/kuka_robotic_arm_RL/blob/master/video/final.gif)
