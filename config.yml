@@ -1,0 +1,13 @@
+environment:
+    actionRepeat: 80
+    isEnableSelfCollision: true
+    renders: true
+    isDiscrete: false
+    maxSteps: 8
+    dv: 0.06
+    removeHeightHack: false
+    blockRandom: 0.3
+    cameraRandom: 0
+    width: 48
+    height: 48
+    numObjects: 1
