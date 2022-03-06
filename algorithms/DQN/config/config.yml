@@ -1,0 +1,53 @@
+Network:                            # Neural network parameters
+    QNet:                           # Policy (or Actor) network parameters
+        hidden_units: [16, 32]      # Number of hidden units (len(hidden_units) will be number of layers)
+        normalization: null         # Normalizing layer outputs with batch norm [`batch`, `instance`, null], set null for no normalization
+        activation: "leaky_relu"    # Activation function to be used (it should match with some function in tensorflow.nn module)
+        learning_rate: 1e-3         # Learning rate for this network
+        lr_scheduler: 
+            type: "ExponentialDecay"
+            input_args: {
+                decay_steps: 3000, 
+                decay_rate: 0.85,
+                staircase: true}
+
+Training:                           # Parameters for training agent
+    batch_size: 256                # Batch size for training Q-values network
+    discount: 0.99                  # Discount factor for future returns
+    test_episodes: 100              # Number of test episodes to be used for evaluating agent performance 
+    test_frequency: 100             # Test learnt policy after every `test_frequency` episodes during training
+    render_frequency: 100           # Render agent's interaction in environment after ever `render_frequency` episodes during training
+    video_save_frequency: null      # Save videos at every `video_save_frequency` episodes out of test_episodes in evaluation step (during training), no video saved if set to null
+    model_save_frequency: 100       # Save model weights after every `model_save_frequency` episodes during training
+    update_target_frequency: 1    # Update target Q-net model after every `update_target_frequency` episodes
+    update_smoothing: 1             # Smoothing for updating target Q-values network
+    Exploration:
+        intial_epsilon: 0.9         # Exploration probability at start of training
+        final_epsilon: 0.05          # Exploration probability at end of training
+        decay_steps: 30000          # Linear decay of exploration probability over `decay_steps` steps of agent
+    Replay_memory:
+        capacity: 50000             # Number of state-action transitions to be stored in replay memory
+        burn_episodes: 1000        # Number of episodes to be used for burning in initial replay memory before training
+    double: false                   # Use Double DQN if set to True
+    duel: False                     # Use dueling networks if set to True
+
+Inference:                          # Parameters for running inference
+    video_save_frequency: 20        # Save videos at every `video_save_frequency` episodes out of test_episodes, no video saved if set to null
+
+Directories:
+    output: "output/"               # Directory to store output artifacts, logs, tensorboard files, videos, saved models
+
+environment:
+    actionRepeat: 80
+    isEnableSelfCollision: true
+    renders: false
+    isDiscrete: true
+    maxSteps: 8
+    dv: 0.06
+    removeHeightHack: false
+    blockRandom: 0.3
+    cameraRandom: 0
+    width: 48
+    height: 48
+    numObjects: 1
+    ImageAsState: false

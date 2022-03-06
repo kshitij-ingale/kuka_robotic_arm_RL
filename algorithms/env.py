@@ -1,12 +1,101 @@
 from pybullet_envs.bullet.kuka_diverse_object_gym_env import KukaDiverseObjectEnv
-from utils import parse_config
-
+from gym import spaces
+import numpy as np
+import pybullet as p
+import os
+import glob
 
 class KukaEnv(KukaDiverseObjectEnv):
     def __init__(self, env_params):
-        super().__init__(actionRepeat=env_params.actionRepeat, isEnableSelfCollision=env_params.isEnableSelfCollision, renders=env_params.renders, isDiscrete=env_params.isDiscrete, maxSteps=env_params.maxSteps, dv=env_params.dv, removeHeightHack=env_params.removeHeightHack, blockRandom=env_params.blockRandom, cameraRandom=env_params.cameraRandom, width=env_params.width, height=env_params.height, numObjects=env_params.numObjects)
-        
-        
+        super().__init__(actionRepeat=env_params.actionRepeat, 
+                        isEnableSelfCollision=env_params.isEnableSelfCollision, 
+                        renders=env_params.renders, isDiscrete=env_params.isDiscrete, 
+                        maxSteps=env_params.maxSteps, dv=env_params.dv, 
+                        removeHeightHack=env_params.removeHeightHack, 
+                        blockRandom=env_params.blockRandom, cameraRandom=env_params.cameraRandom, 
+                        width=env_params.width, height=env_params.height, numObjects=env_params.numObjects)
+        self.ImageAsState = env_params.ImageAsState
+        if self.ImageAsState:
+            self.observation_space = spaces.Box(low=0, high=255, shape=(env_params.height, env_params.width, 3), dtype=np.uint8)
+        else:
+            # This part obtained from kukaGymEnv.py
+            self.reset()
+            largeValObservation = 100
+            observationDim = len(self.getExtendedObservation())
+            observation_high = np.array([largeValObservation] * observationDim)
+            self.observation_space = spaces.Box(-observation_high, observation_high)
+
+    def getExtendedObservation(self):
+        """ KukaGymEnv has hardcoded getExtendedObservation function to use `self.blockUid` to obtain
+        position and orientation of object for feature vector. This function returns position and orientation 
+        for all objects in the env (and gripper position & orientation)
+        """
+        if not hasattr(self, "_objectUids"):
+            super().reset()
+        feature_vec_for_all_blockUids = None
+        for blockUid in self._objectUids:
+            self.blockUid = blockUid
+            feature_vec_for_blockUid = super().getExtendedObservation()
+            if feature_vec_for_all_blockUids:
+                # Only add relative x,y position and euler angle of block in gripper space to the feature vector
+                feature_vec_for_all_blockUids.extend(feature_vec_for_blockUid[-3:])
+            else:
+                feature_vec_for_all_blockUids = feature_vec_for_blockUid
+        return feature_vec_for_all_blockUids
+    
+    def reset(self):
+        img = super().reset()
+        if self.ImageAsState:
+            return img
+        else:
+            return self.getExtendedObservation()
+
+    def step(self, action):
+        img_observation, reward, done, debug = super().step(action)
+        if self.ImageAsState:
+            return img_observation, reward, done, debug
+        else:
+            return self.getExtendedObservation(), reward, done, debug
+    
+    # def _reward(self):
+    #     """Calculates the reward for the episode.
+
+    #     The reward is 1 if one of the objects is above height .2 at the end of the
+    #     episode.
+    #     """
+    #     reward = 0
+    #     self._graspSuccess = 0
+    #     for uid in self._objectUids:
+    #         pos, _ = p.getBasePositionAndOrientation(uid)
+    #         reward = 2+pos[2]
+    #         # If any block is above height, provide reward.
+    #         if pos[2] > 0.2:
+    #             self._graspSuccess += 1
+    #             reward += 10
+    #             break
+    #     return reward
+
+    def _get_random_object(self, num_objects, test):
+        """Randomly choose an object urdf from the random_urdfs directory.
+
+        Args:
+        num_objects:
+            Number of graspable objects.
+
+        Returns:
+        A list of urdf filenames.
+        """
+        if test:
+            urdf_pattern = os.path.join(self._urdfRoot, 'random_urdfs/*0/*.urdf')
+        else:
+            urdf_pattern = os.path.join(self._urdfRoot, 'random_urdfs/*[1-9]/*.urdf')
+        found_object_directories = glob.glob(urdf_pattern)
+        total_num_objects = len(found_object_directories)
+        selected_objects = [10]#np.random.choice(np.arange(total_num_objects), num_objects)
+        selected_objects_filenames = []
+        for object_index in selected_objects:
+            selected_objects_filenames += [found_object_directories[object_index]]
+        return selected_objects_filenames
 
 
 # class KukaVariedObjectEnv(KukaDiverseObjectEnv):
@@ -111,9 +200,20 @@ class KukaEnv(KukaDiverseObjectEnv):
 #         reset = _reset
 
 #         step = _step
-
+"""
+```
+position, orientation = p.getLinkState(env._kuka.kukaUid, env._kuka.kukaGripperIndex)
+euler = p.getEulerFromQuaternion(orientation)
+```
+position: 3 floats indicating position of object/kuka gripper
+orientation: 4 floats indicating orientation in Quaternion format (x,y,z,w)
+euler: 3 floats indicating orientation in Euler format (Pitch, Roll, Yaw)
+"""
 if __name__ == '__main__':
-    config_params = parse_config('config.yml')
+    from algorithms.utils import parse_config
+
+    base_algo_dir = "/".join(__file__.split("/")[:-1])
+    config_params = parse_config(os.path.join(base_algo_dir, 'debug/env_config.yml'))
     env = KukaEnv(config_params.environment)
 
     # Allow user to use specify values with slides in UI
@@ -123,7 +223,7 @@ if __name__ == '__main__':
         user_params.append(env._p.addUserDebugParameter(param,-dv,dv,0))
     user_params.append(env._p.addUserDebugParameter("Joint_angle",0,0.3,0.3))
 
-    # Simulate robotic arm
+    # Simulate robotic arm with actions from UI
     while True:
         state = env.reset()
         done = False
